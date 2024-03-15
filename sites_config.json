@@ -1,0 +1,62 @@
+{
+  "": {
+        "site": "",
+        "element_xpaths": [],
+        "date_info": {
+            "home": [],
+            "inside": []
+        },
+        "date_format": "",
+        "title_info": {
+            "home": [],
+            "inside": []
+        },
+        "description_xpaths": [],
+        "tags_xpaths": [],
+        "models_info": {
+            "home": {
+                "": []
+            },
+            "inside": []
+        },
+        "video_info": {
+            "home": {
+                "": []
+            },
+            "inside": {
+                "": []
+            }
+        },
+        "replace_vid_link": {
+            "replacements": [
+                {"split": "", "to_replace": "", "replacement": ""},
+                {"split": "", "to_replace": "", "replacement": ""}
+            ]
+        },
+        "image_info": {
+            "home": {
+                "": []
+            },
+            "inside": {
+                "": []
+            }
+        },
+        "replace_img_link": {
+            "replacements": [
+                {"split": "", "to_replace": "", "replacement": ""},
+                {"split": "", "to_replace": "", "replacement": ""}
+            ]
+        },
+        "enter_button": [],
+        "ad_button": [],
+        "video_button": [],
+        "expand_desc_button": [],
+        "expand_tags_button": [],
+        "click_element": false,
+        "gobackvp": false,
+        "move_to_video": false,
+        "mtv_xpath": "",
+        "headless": true,
+        "scrape_method": "method_1"
+    }
+}
