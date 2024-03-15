@@ -1,30 +1,44 @@
 {
   "": {
         "site": "",
-        "element_xpaths": [],
+        "element_xpaths": [
+            "//a[@class='video-card-image-container']"
+        ],
         "date_info": {
             "home": [],
-            "inside": []
+            "inside": [
+                "//p[@class='video-upload-date']"
+            ]
         },
         "date_format": "",
         "title_info": {
             "home": [],
-            "inside": []
+            "inside": [
+                "//h1[contains(@class, 'video-title')]"
+            ]
         },
-        "description_xpaths": [],
-        "tags_xpaths": [],
+        "description_xpaths": [
+            "//p[@class='video-description']"
+        ],
+        "tags_xpaths": [
+            "//p[@class='video-tags']/a"
+        ],
         "models_info": {
             "home": {
                 "": []
             },
-            "inside": []
+            "inside": [
+                "//p[@class='video-actors']/a"
+            ]
         },
         "video_info": {
             "home": {
                 "": []
             },
             "inside": {
-                "": []
+                "src": [
+                    "//dl8-video/source[@quality='High Quality']"
+                ]
             }
         },
         "replace_vid_link": {
@@ -43,17 +57,19 @@
         },
         "replace_img_link": {
             "replacements": [
-                {"split": "", "to_replace": "", "replacement": ""},
-                {"split": "", "to_replace": "", "replacement": ""}
+                {"split": "?", "to_replace": "https://content.", "replacement": "https://"},
+                {"split": "", "to_replace": "3.jpg", "replacement": "0.jpg"}
             ]
         },
-        "enter_button": [],
+        "enter_button": ["//button[@class='age-gate__submit button_yes']"],
         "ad_button": [],
-        "video_button": [],
+        "video_button": [
+            "//a[contains(@class, '-watch-trailer')]"
+        ],
         "expand_desc_button": [],
         "expand_tags_button": [],
         "click_element": false,
-        "gobackvp": false,
+        "gobackvp": true,
         "move_to_video": false,
         "mtv_xpath": "",
         "headless": true,
