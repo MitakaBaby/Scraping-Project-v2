@@ -1,10 +1,13 @@
 import re
 import requests
 
+from common import CustomLogger, Utils
+
 class RequestsHandling:
     """
     Handles different types of exceptions that may occur during HTTP requests.
     """
+
     def __init__(self, url_site, url):
         """
         Initializes the RequestsHandling object with the given URL and URL site.
@@ -25,6 +28,9 @@ class RequestsHandling:
             requests.exceptions.ConnectionError : self.handle_name_resolution_error,
         }
 
+        self.logger = CustomLogger()
+        self.site_name = Utils.extract_site_name(url_site)
+
     def handle_connect_timeout(self, url):
         """
         Handles the ConnectTimeout exception.
@@ -39,7 +45,11 @@ class RequestsHandling:
             response = requests.get(url, headers=self.headers, timeout=30)
             return response, None
         except requests.exceptions.RequestException as e:
-            raise e
+            self.logger.log("Request exception",
+                            level='CRITICAL',
+                            site=self.site_name,
+                            exception=e)
+            return None, None
     
     def handle_missing_schema(self):
         """
@@ -64,6 +74,10 @@ class RequestsHandling:
                 response = requests.get(full_url, headers=self.headers)
                 return response, full_url
             except requests.exceptions.RequestException as e:
+                self.logger.log("Request exception",
+                                level='CRITICAL',
+                                site=self.site_name,
+                                exception=e)
                 return None, full_url
 
     def handle_name_resolution_error(self):
@@ -77,6 +91,10 @@ class RequestsHandling:
             response = requests.get(self.url, headers=self.headers)
             return response, None
         except requests.exceptions.RequestException as e:
+            self.logger.log("Request exception",
+                            level='CRITICAL',
+                            site=self.site_name,
+                            exception=e)
             return None, None
 
     def main(self):
