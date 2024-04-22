@@ -1,25 +1,27 @@
 import os
 import re
+from urllib import response
 import requests
 import time
 from datetime import datetime
 
-
 from io import BytesIO
-from termcolor import cprint
 from PIL import Image, UnidentifiedImageError
 from dateutil.parser import parse, ParserError
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, WebDriverException
 from selenium.webdriver.common.by import By
 
 
-from common import Paths, Utils
-
+from common import Paths, Utils, CustomLogger
+from exceptions_handling import RequestsHandling
 
 class SiteScraper:
 
-    def __init__(self, driver, site_name, site):
-        self.driver = driver
+    def __init__(self, site_name, site, driver = None, tree = None):
+        if driver is not None:
+            self.driver = driver
+        if tree is not None:
+            self.tree = tree
         self.site_name = site_name
         self.date, self.title, self.description, self.tags, self.models = None, None, None, None, None
         self.link_for_trailer, self.link_for_image = None, None
@@ -27,7 +29,9 @@ class SiteScraper:
         self.counter_vid = 0
         self.scraped_items = {}
         self.config = Utils.load_configs(site)
+        self.url_site = self.config.get("site")
         self.paths = Paths()
+        self.logger = CustomLogger()
 
     def scrape_elements(self, *scrape_types):
         """ 
@@ -44,6 +48,7 @@ class SiteScraper:
             xpaths = []
             items = []
             elements_found = False
+            method = self.config.get("scrape_method")
             xpaths_key = self.config.get(f"{scrape_type}_info", {})
             xpaths_block = False
             if scrape_type == "element":
@@ -62,79 +67,40 @@ class SiteScraper:
                             xpaths = attributes
                     else:
                         continue
-
             for xpath in xpaths:
                 xpaths_block = True
                 if xpath:
-                    try:
-                        if scrape_type == "element":
-                            elements = self.driver.find_elements(
-                                By.XPATH, xpath)
-                            num_elements = len(elements)
-                            cprint(
-                                f"Number of elements found: {num_elements}.", "green")
-                            if elements:
-                                elements_found = True  # Set the flag
-                                items.extend(elements)
-                                break
-                        elif scrape_type == "date":
-                            dates = self.driver.find_elements(By.XPATH, xpath)
-                            num_elements = len(dates)
-                            cprint(
-                                f"Number of dates found: {num_elements}.", "green")
-                            if dates:
-                                elements_found = True
-                                items.extend(dates)
-                                break
-                        elif scrape_type == "title":
-                            titles = self.driver.find_elements(By.XPATH, xpath)
-                            num_elements = len(titles)
-                            cprint(
-                                f"Number of titles found: {num_elements}.", "green")
-                            if titles:
-                                elements_found = True
-                                items.extend(titles)
-                                break
-                        elif scrape_type == "models":
-                            models = self.driver.find_elements(By.XPATH, xpath)
-                            num_elements = len(models)
-                            cprint(
-                                f"Number of models found: {num_elements}.", "green")
-                            if models:
-                                elements_found = True
-                                items.extend(models)
-                                break
-                        elif scrape_type == "image":
-                            images = self.driver.find_elements(By.XPATH, xpath)
-                            num_elements = len(images)
-                            cprint(
-                                f"Number of images found: {num_elements}.", "green")
-                            if images:
-                                elements_found = True
-                                items.extend(images)
-                                break
-                        elif scrape_type == "video":
-                            videos = self.driver.find_elements(By.XPATH, xpath)
-                            num_elements = len(videos)
-                            cprint(
-                                f"Number of videos found: {num_elements}.", "green")
-                            if videos:
-                                elements_found = True
-                                items.extend(videos)
-                                break
-                        elif scrape_type == "site_name":
-                            pass
-                    except NoSuchElementException:
-                        continue
+                    if method == "method_selenium":
+                        try:
+                            elements = self.driver.find_elements(By.XPATH, xpath)
+                        except NoSuchElementException:
+                            continue
+
+                    elif method == "method_lxml":
+                        elements = self.tree.xpath(xpath)
+
+                    num_elements = len(elements)
+                    if elements:
+                        elements_found = True
+                        items.extend(elements)
+                        break
+
 
             if xpaths_block and not elements_found:
-                cprint(f"No {scrape_type} found.", "red")
-            else:
+                if scrape_type == "element":
+                    self.logger.log(
+                        f"No {scrape_type} found", level='CRITICAL', site=self.site_name)
+                else:
+                    self.logger.log(
+                        f"No {scrape_type} found", level='ERROR', site=self.site_name)
+            elif xpaths_block:
+                self.logger.log(
+                    f"Number of {scrape_type} found: {num_elements}", level='INFO', site=self.site_name)
                 self.scraped_items[scrape_type] = items
 
         return self.scraped_items
 
-    def scrape_date(self, date_el=None):
+    def scrape_date(self, date_el=None, inner_tree=None):
         """
         Scrape and process Date from the web page.
 
@@ -142,6 +108,9 @@ class SiteScraper:
         str: Date.
         """
         date = None
+        if inner_tree is not None:
+            tree = inner_tree
+        method = self.config.get("scrape_method")
         if date_el:
             date = date_el
         else:
@@ -150,27 +119,34 @@ class SiteScraper:
             for location, xpaths in xpaths_key.items():
                 if location == "inside":
                     date_xpaths = xpaths
+                    if date_xpaths == [""]:
+                        self.logger.log("No defined date xpaths",
+                                        level='ERROR',
+                                        site=self.site_name)
+                        return None
+                    if not date_xpaths:
+                        return None
             for xpath in date_xpaths:
-                if xpath == [""]:
-                    cprint("No defined date xpath", "red")
-                    return None
-                if not xpath:
-                    return None
-                try:
-                    date_element = self.driver.find_element(By.XPATH, xpath)
-                    date_attribute = self.config.get("date_attribute", [])
-                    if date_attribute:
-                        try:
+                if method == "method_selenium":
+                    try:
+                        date_element = self.driver.find_element(By.XPATH, xpath)
+                        date_attribute = self.config.get("date_attribute", [])
+                        if date_attribute:
+                            try:
+                                date = date_element.get_attribute(date_attribute)
+                            except WebDriverException as js_exception:
+                                print(
+                                    f"JavascriptException occurred: {js_exception}")
                             date = date_element.get_attribute(date_attribute)
-                        except WebDriverException as js_exception:
-                            print(
-                                f"JavascriptException occurred: {js_exception}")
-                        date = date_element.get_attribute(date_attribute)
-                    else:
-                        date = date_element.get_attribute(
-                            "textContent").replace('\n', '').strip()
-                except NoSuchElementException:
-                    continue
+                        else:
+                            date = date_element.get_attribute(
+                                "textContent").replace('\n', '').strip()
+                    except NoSuchElementException:
+                        continue
+                elif method == "method_lxml":
+                    date_element = tree.find(xpath)
+                    if date_element is not None:
+                        date = date_element.text_content().replace('\n', '').strip()
         transformations = [
             lambda text: text,  # No transformation
             lambda text: text.replace(
@@ -206,7 +182,9 @@ class SiteScraper:
         ]
 
         transform_success = False
-        if date:
+        parser_error = None
+        value_error = None
+        if date is not None:
             for transform in transformations:
                 try:
                     date = transform(date)
@@ -216,28 +194,45 @@ class SiteScraper:
                             date, date_format).strftime("%b %d, %Y")
                     else:
                         date = parse(date).strftime("%b %d, %Y")
-                    cprint("Date element found.", "green")
+                    self.logger.log("Date found", level='INFO',
+                                    site=self.site_name)
                     self.date = date
                     transform_success = True
                     break
-                except (ParserError, ValueError):
-                    continue
+                except ParserError as e:
+                    parser_error = e
+                except ValueError as e:
+                    value_error = e
 
             if not transform_success:
-                cprint("Parsing error.", "red")
+                if parser_error is not None:
+                    self.logger.log("Parsing error",
+                                    level='ERROR',
+                                    site=self.site_name,
+                                    exception=parser_error)
+                elif value_error is not None:
+                    self.logger.log("Value error",
+                                    level='ERROR',
+                                    site=self.site_name,
+                                    exception=value_error)
+            return self.date        
+        else:
+            self.logger.log("No date found",
+                            level='ERROR',
+                            site=self.site_name,
+                            exception=value_error)
+            return None
 
-            if not self.date:
-                cprint("No date found.", "red")
-
-        return self.date
-
-    def scrape_title(self, title_el=None):
+    def scrape_title(self, title_el=None, inner_tree=None):
         """
         Scrape and process Title from the web page.
 
         Returns:
         str: Title.
         """
+        if inner_tree is not None:
+            tree = inner_tree
+        method = self.config.get("scrape_method")
         if title_el:
             self.title = title_el
         else:
@@ -248,91 +243,143 @@ class SiteScraper:
                     title_xpaths = xpaths
             for xpath in title_xpaths:
                 if xpath == [""]:
-                    cprint("No defined title xpath", "red")
+                    self.logger.log("No defined title xpaths",
+                                    level='ERROR',
+                                    site=self.site_name)
                     return None
                 if not xpath:
                     return None
-                try:
-                    title_element = self.driver.find_element(By.XPATH, xpath)
-                    self.title = title_element.get_attribute(
-                        "textContent").replace('\n', '').strip().title()
-                    cprint("Title element found.", "green")
-                    break
-                except NoSuchElementException:
-                    continue
+                if method == "method_selenium":
+                    try:
+                        title_element = self.driver.find_element(By.XPATH, xpath)
+                        self.title = title_element.get_attribute(
+                            "textContent").replace('\n', '').strip().title()
+                        break
+                    except NoSuchElementException:
+                        continue
+                elif method == "method_lxml":
+                    title_element = tree.find(xpath)
+                    if title_element is not None:
+                        self.title = title_element.text_content().replace('\n', '').strip().title()
 
-            if not self.title:
-                cprint("No title found.", "red")
+        if self.title:
+            self.logger.log("Title found", level='INFO',
+                            site=self.site_name)
+            return self.title
+        else:
+            self.logger.log("No title found",
+                            level='ERROR',
+                            site=self.site_name)
+            return None
 
-        return self.title
-
-    def scrape_description(self):
+    def scrape_description(self, inner_tree=None):
         """
         Scrape and process Description from the web page.
 
         Returns:
         str: Description.
         """
+        if inner_tree is not None:
+            tree = inner_tree
+        method = self.config.get("scrape_method")
         description_xpaths = self.config.get("description_xpaths", [])
         if description_xpaths == [""]:
-            cprint("No defined description xpath", "red")
+            self.logger.log("No defined description xpaths",
+                            level='ERROR',
+                            site=self.site_name)
             return None
         if not description_xpaths:
             return None
-
+        text = None
         for xpath in description_xpaths:
-            try:
-                description_element = self.driver.find_element(By.XPATH, xpath)
-                text = description_element.get_attribute("textContent")
-                text = text.replace('\n', '').strip()
-                text = text.replace("Synopsis", "").strip()
-                text = text.replace("DESCRIPTION:", "").strip()
-                text = text.replace("Description:", "").strip()
-                text = text.replace("Episode Summary", "").strip()
-                if text.strip():
-                    self.description = text
-                    cprint("Description element found.", "green")
-                    return self.description
-            except NoSuchElementException:
-                continue
+            if method == "method_selenium":
+                try:
+                    description_element = self.driver.find_element(By.XPATH, xpath)
+                    text = description_element.get_attribute("textContent")
+                except NoSuchElementException:
+                    continue
 
-        cprint("No description found.", "red")
-        return None
+            elif method == "method_lxml":
+                description_element = tree.find(xpath)
+                if description_element is not None:
+                    text = description_element.text_content()
 
-    def scrape_tags(self):
+        if text:
+            transformations = [
+                lambda text: text.replace('\n', ''),
+                lambda text: text.replace("Synopsis", ""),
+                lambda text: text.replace("DESCRIPTION:", ""),
+                lambda text: text.replace("Description:", ""),
+                lambda text: text.replace("Episode Summary", ""),
+                lambda text: text.strip(),
+            ]
+            for transform in transformations:
+                text = transform(text)
+
+            self.description = text
+            self.logger.log("Description found",
+                            level='INFO',
+                            site=self.site_name)
+            return self.description
+        else:
+            self.logger.log("No description found",
+                            level='ERROR',
+                            site=self.site_name)
+            return None
+
+    def scrape_tags(self, inner_tree=None):
         """
         Scrape and process tags from the web page.
 
         Returns:
         list: A list of scraped tags.
         """
+        if inner_tree is not None:
+            tree = inner_tree
+        method = self.config.get("scrape_method")
         tags_xpaths = self.config.get("tags_xpaths", [])
         if tags_xpaths == [""]:
-            cprint("No defined tags xpath", "red")
+            self.logger.log("No defined tags xpaths",
+                            level='ERROR',
+                            site=self.site_name)
             return None
         if not tags_xpaths:
             return None
 
         for xpath in tags_xpaths:
-            try:
-                tags_elements = self.driver.find_elements(By.XPATH, xpath)
+            num_tags_elements = []
+            if method == "method_selenium":
+                try:
+                    tags_elements = self.driver.find_elements(By.XPATH, xpath)
+                    num_tags_elements = len(tags_elements)
+                    if not tags_elements:
+                        raise NoSuchElementException
+                    tags_names = [tag.get_attribute("textContent").title().replace(
+                        ",", "").replace('\n', '').strip() for tag in tags_elements]
+                    self.tags = ', '.join(tags_names)
+                    break
+                except NoSuchElementException:
+                    continue
+            elif method == "method_lxml":
+                tags_elements = tree.xpath(xpath)
                 num_tags_elements = len(tags_elements)
-                cprint(f"Number of tags found: {num_tags_elements}.", "green")
-                if not tags_elements:
-                    raise NoSuchElementException
-                tags_names = [tag.get_attribute("textContent").title().replace(
-                    ",", "").replace('\n', '').strip() for tag in tags_elements]
-                self.tags = ', '.join(tags_names)
-                break
-            except NoSuchElementException:
-                continue
+                if tags_elements:
+                    tags_names = [tag.text_content().title().replace(
+                        ",", "").replace('\n', '').strip() for tag in tags_elements]
+                    self.tags = ', '.join(tags_names)
 
         if not self.tags:
-            cprint("No tags found.", "red")
+            self.logger.log("No tags found",
+                            level='ERROR',
+                            site=self.site_name)
+        else:
+            self.logger.log(f"Number of tags found: {num_tags_elements}",
+                            level='INFO',
+                            site=self.site_name)
 
         return self.tags
 
-    def scrape_models(self, models_names=None):
+    def scrape_models(self, models_names=None, inner_tree=None):
         """
         Scrape and process models from the web page.
 
@@ -344,7 +391,14 @@ class SiteScraper:
             lambda text: text.title().replace(',', '').strip().strip("Starring: ") if text.startswith(
                 "Starring: ") else text.title().replace(',', '').strip(),
         ]
+
+        if inner_tree is not None:
+            tree = inner_tree
+        xpaths_key = self.config.get(f"image_info", {})
+        method = self.config.get("scrape_method")
+        num_models_elements = []
         if models_names:
+            num_models_elements = len(models_names)
             self.models = ', '.join(models_names)
         else:
             xpaths_key = self.config.get("models_info", {})
@@ -352,37 +406,43 @@ class SiteScraper:
                 if location == "inside":
                     for xpath in models_xpaths:
                         if xpath == [""]:
-                            cprint("No defined models xpath", "red")
+                            self.logger.log("No defined models xpaths", level='ERROR', site=self.site_name)
                             return None
                         if not xpath:
                             return None
-                        try:
-                            models_elements = self.driver.find_elements(
-                                By.XPATH, xpath)
-                            num_models_elements = len(models_elements)
-                            cprint(
-                                f"Number of models found: {num_models_elements}.", "green")
-                            if not models_elements:
-                                raise NoSuchElementException
-                            models_names = []
+                        models_names = []
+                        if method == "method_selenium":
+                            try:
+                                models_elements = self.driver.find_elements(
+                                    By.XPATH, xpath)
+                                if not models_elements:
+                                    raise NoSuchElementException
+                            except NoSuchElementException:
+                                continue
+                        elif method == "method_lxml":
+                            models_elements = tree.xpath(xpath)
+                        num_models_elements = len(models_elements)
+                        for model in models_elements:
+                            if method == "method_selenium":
+                                processed_name = model.get_attribute("textContent")
+                            elif method == "method_lxml":
+                                processed_name = model.text_content()
+                            for transform in transformations:
+                                processed_name = transform(processed_name)
+                            models_names.append(processed_name)
+                        self.models = ', '.join(models_names)
+                        break
 
-                            for model in models_elements:
-                                # processed_name = model.text # Retrieves the visible text of an element
-                                # Retrieves the text content of an element, including hidden or non-visible text
-                                processed_name = model.get_attribute(
-                                    "textContent")
-                                for transform in transformations:
-                                    processed_name = transform(processed_name)
-                                models_names.append(processed_name)
-
-                            self.models = ', '.join(models_names)
-                            break
-                        except NoSuchElementException:
-                            continue
 
         if not self.models:
-            cprint("No models found.", "red")
-
+            self.logger.log("No models found",
+                            level='ERROR',
+                            site=self.site_name)
+        else:
+            self.logger.log(f"Number of models found: {num_models_elements}",
+                level='INFO',
+                site=self.site_name)
+            
         return self.models
 
 
@@ -416,26 +476,28 @@ class ImageScraper(SiteScraper):
         Returns:
             str: Path to the saved image file, or None if saving failed.
         """
-        path_image = self.paths.create_image_path(
-            self.site_name, self.counter_img)
-        response_image = requests.get(self.link_for_image, timeout=120)
-        try:
-            image = Image.open(BytesIO(response_image.content))
-            image = image.convert("RGB")
-            image.save(path_image, optimize=True, quality=50)
-            if os.path.exists(path_image):
-                cprint(f"Image saved at {path_image}.", "yellow")
-            else:
-                cprint("Failed to save image.", "red")
-            self.counter_img += 1
-            cprint("Image found.", "green")
-        except UnidentifiedImageError:
-            cprint("UnidentifiedImageError: Image format not recognized.", "red")
-            return None
+        path_image = self.paths.create_image_path(self.site_name, self.counter_img)
+        response_image, img_inside = RequestsHandling(self.url_site, self.link_for_image).main()
+        if response_image:
+            try:
+                image = Image.open(BytesIO(response_image.content))
+                image = image.convert("RGB")
+                image.save(path_image, optimize=True, quality=50)
+                if os.path.exists(path_image):
+                    self.logger.log(
+                        f"Image saved at {path_image}.", level='PATH', site=self.site_name)
+                else:
+                    self.logger.log("Failed to save image",
+                                    level='ERROR', site=self.site_name)
+                self.counter_img += 1
+                self.logger.log("Image saved", level='INFO', site=self.site_name)
+            except UnidentifiedImageError as e:
+                self.logger.log("UnidentifiedImageError: Image format not recognized.",
+                                level='ERROR', site=self.site_name, exception=e)
+                return None, None
+        return img_inside, path_image
 
-        return path_image
-
-    def scrape_image_with_xpath(self, image_home=None):
+    def scrape_image(self, image_home=None, inner_tree=None):
         """ Scrape image link from the web page.
 
         Parameters:
@@ -444,7 +506,12 @@ class ImageScraper(SiteScraper):
         Returns:
             tuple: Tuple containing the scraped image link and the path to the saved image file.
         """
+        if inner_tree is not None:
+            tree = inner_tree
         xpaths_key = self.config.get(f"image_info", {})
+        method = self.config.get("scrape_method")
+        replace_img_config = self.config.get("replace_img_link", {})
+        replacements = replace_img_config.get("replacements", [])
         img_inside = None
         image_found = False
         for location, attributes in xpaths_key.items():
@@ -453,47 +520,51 @@ class ImageScraper(SiteScraper):
                     for attribute, image_xpaths in attributes.items():
                         for xpath in image_xpaths:
                             if xpath == [""]:
-                                cprint("No defined image xpaths", "red")
+                                self.logger.log(
+                                    "No defined image xpaths", level='ERROR', site=self.site_name)
                                 return None, None
+            
                             if not xpath:
                                 return None, None
+                            
                             for xpath in image_xpaths:
-                                try:
-                                    link_to_source = self.driver.find_element(
-                                        By.XPATH, xpath)
-                                except NoSuchElementException:
-                                    continue
-                                except StaleElementReferenceException:
-                                    time.sleep(3)
-                                    cprint(
-                                        "Stale element. Re-finding elements.", "yellow")
-                                    link_to_source = self.driver.find_element(
-                                        By.XPATH, xpath)
-                                replace_img_config = self.config.get(
-                                    "replace_img_link", {})
-                                replacements = replace_img_config.get(
-                                    "replacements", [])
-                                try:
-                                    img_inside = self.image_link_replacements(
-                                        link_to_source.get_attribute(attribute), replacements)
-                                except StaleElementReferenceException:
-                                    time.sleep(3)
-                                    cprint(
-                                        "Stale element. Re-finding element.", "yellow")
-                                    link_to_source = self.driver.find_element(
-                                        By.XPATH, xpath)
-                                    img_inside = self.image_link_replacements(
-                                        link_to_source.get_attribute(attribute), replacements)
-                                if attribute == "style":
-                                    url_pattern = re.compile(r"url\((.+?)\)")
-                                    match = re.search(url_pattern, img_inside)
-                                    if match:
-                                        url = match.group(1)
-                                        img_inside = url.strip('"')
+
+                                if method == "method_selenium":
+                                    try:
+                                        link_to_source = self.driver.find_element(By.XPATH, xpath)
+                                    except NoSuchElementException:
+                                        continue
+                                    except StaleElementReferenceException:
+                                        time.sleep(3)
+                                        self.logger.log(
+                                            "Stale element. Re-finding elements.", 
+                                            level='WARNING', 
+                                            site=self.site_name)
+                                        link_to_source = self.driver.find_element(By.XPATH, xpath)
+                                    try:
+                                        img_inside = self.image_link_replacements(
+                                            link_to_source.get_attribute(attribute), replacements)
+                                    except StaleElementReferenceException:
+                                        time.sleep(3)
+                                        self.logger.log(
+                                            "Stale element. Re-finding elements.", level='WARNING', site=self.site_name)
+                                        link_to_source = self.driver.find_element(
+                                            By.XPATH, xpath)
+                                        img_inside = self.image_link_replacements(
+                                            link_to_source.get_attribute(attribute), replacements)
+
+                                elif method =="method_lxml":
+                                    link_to_source = tree.find(xpath)
+                                    img_inside = self.image_link_replacements(link_to_source.get(attribute), replacements)
+
+                                if img_inside:
+                                    if attribute == "style":
+                                        url_pattern = re.compile(r"url\((.+?)\)")
+                                        match = re.search(url_pattern, img_inside)
+                                        if match:
+                                            url = match.group(1)
+                                            img_inside = url.strip('"')
                                 if img_inside is not None and img_inside != "":
-                                    if "https:" not in img_inside:
-                                        img_inside = "https://" + \
-                                            img_inside.lstrip('/')
                                     if img_inside:
                                         image_found = True
                                         break
@@ -501,24 +572,25 @@ class ImageScraper(SiteScraper):
                                     image_found = True
                                     break
                                 else:
-                                    cprint("img_inside is None", "red")
+                                    self.logger.log(
+                                        "img_inside is None", level='ERROR', site=self.site_name)
                                     continue
                             if image_found:
                                 break
                         if image_found:
                             break
-
         if img_inside:
             self.link_for_image = img_inside
-            path_image = self.save_image()
+            self.link_for_image, path_image = self.save_image()
             return self.link_for_image, path_image
         elif image_home:
             self.link_for_image = image_home
-            path_image = self.save_image()
+            self.link_for_image, path_image = self.save_image()
             return self.link_for_image, path_image
 
         if not self.link_for_image:
-            cprint("No image found.", "red")
+            self.logger.log("No image found", level='CRITICAL',
+                            site=self.site_name)
 
         return self.link_for_image, None
 
@@ -541,9 +613,11 @@ class VideoScraper(SiteScraper):
                 if "split" in replacement and replacement["split"] != "":
                     link = link.split(replacement["split"])[0]
                 if "to_replace" in replacement and "replacement" in replacement:
-                    link = link.replace(
-                        replacement["to_replace"], replacement["replacement"])
-
+                    to_replace = replacement["to_replace"]
+                    replacement_str = replacement["replacement"]
+                    if replacement_str not in link:
+                        link = link.replace(to_replace, replacement_str)
+                    
         return link
 
     def save_video(self):
@@ -555,22 +629,26 @@ class VideoScraper(SiteScraper):
         """
         path_video = None
         if self.link_for_trailer is not None and self.link_for_trailer.startswith("blob"):
-            cprint("Video starts with blob.", "red")
+            self.logger.log(f"Video starts with blob",
+                            level='WARNING', site=self.site_name)
         else:
             path_video = self.paths.create_video_path(
                 self.site_name, self.counter_vid)
-            response_video = requests.get(self.link_for_trailer, timeout=120)
-            with open(path_video, 'wb') as video_file:
-                video_file.write(response_video.content)
+            response_video, vid_inside = RequestsHandling(self.url_site, self.link_for_trailer).main()
+            if response_video:
+                with open(path_video, 'wb') as video_file:
+                    video_file.write(response_video.content)
             if os.path.exists(path_video):
-                cprint(f"Trailer saved at {path_video}.", "yellow")
+                self.logger.log(
+                    f"Trailer saved at {path_video}", level='PATH', site=self.site_name)
             else:
-                cprint("Failed to save trailer.", "red")
+                self.logger.log("Failed to save trailer",
+                                level='ERROR', site=self.site_name)
             self.counter_vid += 1
 
-        return path_video
+        return vid_inside, path_video
 
-    def scrape_video(self, vid_home=None):
+    def scrape_video(self, vid_home=None, inner_tree = None):
         """ Scrape video link from the web page.
 
         Parameters:
@@ -579,68 +657,87 @@ class VideoScraper(SiteScraper):
         Returns:
             tuple: Tuple containing the scraped video link and the path to the saved video file.
         """
+        if inner_tree is not None:
+            tree = inner_tree
         vid_inside = None
+        method = self.config.get("scrape_method")
         xpaths_key = self.config.get(f"video_info", {})
+        replace_vid_config = self.config.get("replace_vid_link", {})
+        replacements = replace_vid_config.get("replacements", [])
         for location, attributes in xpaths_key.items():
             if location == "inside":
                 if isinstance(attributes, dict) and attributes:
                     for attribute, video_xpaths in attributes.items():
+                        if attribute == "-":
+                            return None, None
                         for xpath in video_xpaths:
                             if xpath == [""]:
-                                cprint("No defined video xpaths", "red")
+                                self.logger.log(
+                                    "No defined video xpaths", level='CRITICAL', site=self.site_name)
                                 return None, None
                             if not xpath:
                                 return None, None
-                            try:
-                                link_to_source = self.driver.find_element(
-                                    By.XPATH, xpath)
-                            except NoSuchElementException:
-                                continue
-                            except StaleElementReferenceException:
-                                time.sleep(3)
-                                cprint(
-                                    "Stale element. Re-finding elements.", "yellow")
-                                link_to_source = self.driver.find_element(
-                                    By.XPATH, xpath)
-                            replace_vid_config = self.config.get(
-                                "replace_vid_link", {})
-                            replacements = replace_vid_config.get(
-                                "replacements", [])
-                            try:
-                                vid_inside = self.video_link_replacements(
-                                    link_to_source.get_attribute(attribute), replacements)
-                            except StaleElementReferenceException:
-                                time.sleep(3)
-                                cprint(
-                                    "Stale element. Re-finding elements.", "yellow")
-                                link_to_source = self.driver.find_element(
-                                    By.XPATH, xpath)
-                                vid_inside = self.video_link_replacements(
-                                    link_to_source.get_attribute(attribute), replacements)
-                            if attribute == "onclick":
-                                url_pattern = re.compile(r"tload\('(.+?)'\); ")
-                                match = re.search(url_pattern, vid_inside)
-                                if match:
-                                    vid_inside = match.group(1)
+
+                            if method == "method_selenium":
+                                try:
+                                    link_to_source = self.driver.find_element(
+                                        By.XPATH, xpath)
+                                except NoSuchElementException:
+                                    continue
+                                except StaleElementReferenceException:
+                                    time.sleep(3)
+                                    self.logger.log(
+                                        "Stale element. Re-finding elements.", level='WARNING', site=self.site_name)
+                                    link_to_source = self.driver.find_element(
+                                        By.XPATH, xpath)
+                                try:
+                                    vid_inside = self.video_link_replacements(
+                                        link_to_source.get_attribute(attribute), replacements)
+                                except StaleElementReferenceException:
+                                    time.sleep(3)
+                                    self.logger.log(
+                                        "Stale element. Re-finding elements.", level='WARNING', site=self.site_name)
+                                    link_to_source = self.driver.find_element(
+                                        By.XPATH, xpath)
+                                    vid_inside = self.video_link_replacements(
+                                        link_to_source.get_attribute(attribute), replacements)
+
+                            elif method =="method_lxml":
+                                link_to_source = tree.find(xpath)
+                                if link_to_source is not None:
+                                    vid_inside = self.video_link_replacements(link_to_source.get(attribute), replacements)
+                            if vid_inside:
+                                if attribute == "onclick":
+                                    patterns = [
+                                        r"tload\(['\"]?(https?://[^'\" ]+?)['\"]?, this\)",
+                                        r"tload\('(.+?)'\);?",
+                                        r"tload\(['\"]?(https?://.+?)['\"]?, this\)",
+                                    ]
+                                    for pattern in patterns:
+                                        url_pattern = re.compile(pattern)
+                                        match = re.search(url_pattern, vid_inside)
+                                        if match:
+                                            vid_inside = match.group(1)
+                                            break
                             if not vid_inside:
-                                cprint("vid_inside is None.", "red")
+                                self.logger.log(
+                                    "vid_inside is None", level='ERROR', site=self.site_name)
                                 continue
-                            if "https:" not in vid_inside:
-                                vid_inside = "https://"+vid_inside.lstrip('/')
                             break
 
         if vid_inside and not vid_inside.startswith("blob"):
             self.link_for_trailer = vid_inside
-            path_video = self.save_video()
-            cprint("Video found.", "green")
+            self.link_for_trailer, path_video = self.save_video()
+            self.logger.log("Video found", level='INFO', site=self.site_name)
             return self.link_for_trailer, path_video
         elif vid_home:
             self.link_for_trailer = vid_home
-            path_video = self.save_video()
-            cprint("Video found.", "green")
+            self.link_for_trailer, path_video = self.save_video()
+            self.logger.log("Video found", level='INFO', site=self.site_name)
             return self.link_for_trailer, path_video
 
         if not self.link_for_trailer:
-            cprint("No video found.", "red")
+            self.logger.log("No video found", level='CRITICAL',
+                            site=self.site_name)
 
         return self.link_for_trailer, None
