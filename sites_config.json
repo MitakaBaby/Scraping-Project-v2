@@ -1,44 +1,32 @@
 {
   "": {
+    "": {
         "site": "",
-        "element_xpaths": [
-            "//a[@class='video-card-image-container']"
-        ],
+        "element_xpaths": [],
+        "elements_attribute": "",
         "date_info": {
             "home": [],
-            "inside": [
-                "//p[@class='video-upload-date']"
-            ]
+            "inside": []
         },
         "date_format": "",
         "title_info": {
             "home": [],
-            "inside": [
-                "//h1[contains(@class, 'video-title')]"
-            ]
+            "inside": []
         },
-        "description_xpaths": [
-            "//p[@class='video-description']"
-        ],
-        "tags_xpaths": [
-            "//p[@class='video-tags']/a"
-        ],
+        "description_xpaths": [],
+        "tags_xpaths": [],
         "models_info": {
             "home": {
                 "": []
             },
-            "inside": [
-                "//p[@class='video-actors']/a"
-            ]
+            "inside": []
         },
         "video_info": {
             "home": {
                 "": []
             },
             "inside": {
-                "src": [
-                    "//dl8-video/source[@quality='High Quality']"
-                ]
+                "": []
             }
         },
         "replace_vid_link": {
@@ -57,22 +45,20 @@
         },
         "replace_img_link": {
             "replacements": [
-                {"split": "?", "to_replace": "https://content.", "replacement": "https://"},
-                {"split": "", "to_replace": "3.jpg", "replacement": "0.jpg"}
+                {"split": "", "to_replace": "", "replacement": ""},
+                {"split": "", "to_replace": "", "replacement": ""}
             ]
         },
-        "enter_button": ["//button[@class='age-gate__submit button_yes']"],
+        "enter_button": [],
         "ad_button": [],
-        "video_button": [
-            "//a[contains(@class, '-watch-trailer')]"
-        ],
+        "video_button": [],
         "expand_desc_button": [],
         "expand_tags_button": [],
         "click_element": false,
-        "gobackvp": true,
+        "gobackvp": false,
         "move_to_video": false,
         "mtv_xpath": "",
         "headless": true,
-        "scrape_method": "method_1"
+        "scrape_method": ""
     }
 }
