@@ -5,17 +5,24 @@ import time
 
 
 import pandas as pd
+import tkinter as tk
+from tkinter import messagebox
 from datetime import datetime
-from termcolor import cprint
 from urllib.parse import urlparse
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-class Paths:
 
+class Paths:
+    """
+    Manages file paths and directory creation.
+    """
     def __init__(self):
+        """
+        Initializes Paths object.
+        """
         self.home_dir = os.path.expanduser("~")
         self.filename = os.path.basename(__file__)  # This is the file name
         self.data_dir = os.path.join(self.home_dir, "Desktop", "Site", "Data")
@@ -27,11 +34,15 @@ class Paths:
             self.home_dir, self.data_dir, "Videos", "Auto Downloaded Trailers")
         self.raw_data_dir = os.path.join(
             self.home_dir, self.data_dir, "Raw Data")
+        self.log_dir = os.path.join(self.home_dir, self.data_dir, "Logs")
         self.daily_scrapped = ""
         self.site_scrapped = ""
         self.schedule_data = ""
+        self.root = tk.Tk()
+        self.root.withdraw()
         self.create_directories()
         self.date_utils = Utils()
+        self.logger = CustomLogger()
 
     def set_daily_scrapped(self):
         """
@@ -92,8 +103,7 @@ class Paths:
             str: Path for the video file.
         """
         folder_path_video = os.path.join(self.video_dir, site_name)
-        if not os.path.exists(folder_path_video):
-            os.makedirs(folder_path_video)
+        os.makedirs(folder_path_video, exist_ok=True)
 
         path_video = os.path.join(
             folder_path_video, f"{self.date_utils.get_current_datetime()}-{counter_vid}.mp4")
@@ -111,9 +121,9 @@ class Paths:
         Returns:
             str: Path for the image file.
         """
+
         folder_path_image = os.path.join(self.image_dir, site_name)
-        if not os.path.exists(folder_path_image):
-            os.makedirs(folder_path_image)
+        os.makedirs(folder_path_image, exist_ok=True)
 
         path_image = os.path.join(
             folder_path_image, f"{self.date_utils.get_current_datetime()}-{counter_img}.jpg")
@@ -124,20 +134,19 @@ class Paths:
         """ 
         Create necessary directories if they don't exist. 
         """
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir)
-        if not os.path.exists(self.desktop_dir):
-            os.makedirs(self.desktop_dir)
-        if not os.path.exists(self.image_dir):
-            os.makedirs(self.image_dir)
-        if not os.path.exists(self.video_dir):
-            os.makedirs(self.video_dir)
-        if not os.path.exists(self.raw_data_dir):
-            os.makedirs(self.raw_data_dir)
+        os.makedirs(self.data_dir, exist_ok=True)
+        os.makedirs(self.desktop_dir, exist_ok=True)
+        os.makedirs(self.image_dir, exist_ok=True)
+        os.makedirs(self.video_dir, exist_ok=True)
+        os.makedirs(self.raw_data_dir, exist_ok=True)
+        os.makedirs(self.log_dir, exist_ok=True)
 
 
 class DataFrames(Paths):
-
+    """
+    Manages the creation and manipulation of Pandas DataFrames for storing scraped data.
+    Inherits from Paths to utilize file paths and directory management functionalities.
+    """
     def save_dataframe_with_retry(self, data, output_path, site_name=None):
         """ 
         Save DataFrame to Excel file with retry mechanism in case of permission errors.
@@ -167,16 +176,46 @@ class DataFrames(Paths):
                     df.to_excel(output_path, index=False)
                     saved_successfully = True
                 break
-            except PermissionError:
-                cprint(
-                    f"Attempt {attempt + 1}: A permission error occurred while saving the file {output_path}.", 'red')
+            except PermissionError as ps_error:
+                self.logger.log(
+                    f"Attempt {attempt + 1}: A permission error occurred while saving the file {output_path}",
+                    level='ERROR',
+                    site="DataFrame",
+                    exception=ps_error)
+
                 time.sleep(5)
 
         if not saved_successfully:
             if new_data:
-                cprint(
-                    f"Exceeded the maximum number of retry attempts. The file {output_path} may be opened.", 'red')
-                input("Press Enter to make one more attempt...")
+                self.logger.log(
+                    f"Exceeded the maximum number of retry attempts. The file {output_path} may be opened",
+                    level='ERROR',
+                    site="DataFrame"
+                    )
+                
+                success = self.manual_retry_prompt(output_path, max_retries=3, data=data)
+                if success:
+                    self.logger.log(
+                        "Manual attempt successful",
+                        level='INFO',
+                        site="DataFrame"
+                    )
+                else:
+                    self.logger.log(
+                        "Manual attempt failed",
+                        level='ERROR',
+                        site="DataFrame"
+                    )
+
+        return df
+    
+    def manual_retry_prompt(self, output_path, max_retries, data):
+        """ Display retry prompt """
+        retry_count = 0
+        while retry_count < max_retries:
+            retry = messagebox.askretrycancel("Retry", f"Exceeded the maximum number of retry attempts to save file {output_path}. Retry? ({retry_count + 1}/{max_retries})")
+            if retry:
+                retry_count += 1
                 try:
                     df = pd.DataFrame(data, columns=["Site", "Date", "Title", "Description", "Tags", "Models", "Video to embed",
                                                      "Link for video", "Link for image", "Path image", "Path video"])
@@ -184,12 +223,16 @@ class DataFrames(Paths):
                     df = pd.concat([df, existing_df], ignore_index=True)
                     if data:
                         df.to_excel(output_path, index=False)
-                        cprint("Manual attempt successful.", 'green')
-
+                        return True
                 except Exception as e:
-                    cprint(f"Manual attempt failed. Error is /n {e}", 'red')
-
-        return df
+                    self.logger.log(
+                        f"Manual attempt failed. Error is {e}",
+                        level='ERROR',
+                        site="DataFrame"
+                    )
+            else:
+                return False
+        return False
 
     def read_save_schedule_df(self, list_name):
         """ 
@@ -245,6 +288,9 @@ class DataFrames(Paths):
 
 
 class Utils:
+    """
+    Utility class for common functions.
+    """
     @staticmethod
     def setup_chrome_driver(headless=True):
         """
@@ -286,6 +332,9 @@ class Utils:
 
     @staticmethod
     def get_day_of_week():
+        """
+        Returns the current day of the week (0 for Monday, 6 for Sunday).
+        """
         return datetime.now().weekday()
 
     @staticmethod
@@ -304,25 +353,33 @@ class Utils:
 
     @staticmethod
     def start_time():
+        """
+        Returns the current time as a starting point for measuring elapsed time.
+        """
         return time.time()
 
     @staticmethod
     def end_time():
+        """
+        Returns the current time as an ending point for measuring elapsed time.
+        """
         return time.time()
 
     @staticmethod
     def load_configs(site):
         """
-        Load xpaths.
+        Load xpaths from a JSON file.
+
+        Args:
+            site (str): The name of the site.
 
         Returns:
-        list: A list of xpaths.
+            dict: A dictionary of xpaths for the given site.
         """
         with open('D:\\Visual Studio Code\\Scrapers\\Progam\\V2\\sites_config.json',
                   'r', encoding='utf-8') as json_file:
             xpaths = json.load(json_file)
 
-            # Convert keys to lowercase
             xpaths_lower = {key.lower(): value for key,
                             value in xpaths.items()}
 
@@ -330,15 +387,150 @@ class Utils:
 
     @staticmethod
     def extract_site_name(url):
+        """
+        Extracts the site name from the given URL.
+
+        Args:
+            url (str): The URL from which to extract the site name.
+
+        Returns:
+            str: The extracted site name.
+        """
         parsed_url = urlparse(url)
         match = re.match(
             r"^(?:https?://)?(?:www\.)?(?:.*?\.)?(?P<site_name>.+?)\.", parsed_url.netloc)
-        site_name = match.group("site_name").replace(
-            "-", "").replace("tour.", "").title() if match else None
-        if site_name == "Dreamnet":
-            site_name = "Girlsdreamnet"
-        elif site_name == "Twistysnetwork":
-            site_name = "Twistys"
-        elif site_name == "Elxcomplete":
-            site_name = "Evolvedfights"
+        site_name = match.group("site_name").replace("-", "").replace("tour.", "").title() if match else ""
         return site_name
+
+
+class Colors:
+    """
+    Provides ANSI escape sequences for text color, background color, and text style.
+    """
+    # Foreground colors
+    FOREGROUND = {
+        'BLACK': '\033[30m',
+        'RED': '\033[31m',
+        'GREEN': '\033[32m',
+        'YELLOW': '\033[33m',
+        'BLUE': '\033[34m',
+        'MAGENTA': '\033[35m',
+        'CYAN': '\033[36m',
+        'WHITE': '\033[37m',
+        'ORANGE': '\033[38;5;208m'
+    }
+
+    # Background colors
+    BACKGROUND = {
+        'BLACK_BACKGROUND': '\033[40m',
+        'RED_BACKGROUND': '\033[41m',
+        'GREEN_BACKGROUND': '\033[42m',
+        'YELLOW_BACKGROUND': '\033[43m',
+        'BLUE_BACKGROUND': '\033[44m',
+        'MAGENTA_BACKGROUND': '\033[45m',
+        'CYAN_BACKGROUND': '\033[46m',
+        'WHITE_BACKGROUND': '\033[47m'
+    }
+
+    # Styles
+    STYLE = {
+        'BOLD': '\033[1m',
+        'ITALIC': '\033[3m',
+        'UNDERLINE': '\033[4m',
+        'INVERSE': '\033[7m'
+    }
+
+    RESET = '\033[0m'
+
+    @staticmethod
+    def color(*args):
+        """
+        Returns ANSI escape sequences for applying styles and colors in the console.
+
+        Args:
+            *args (str): Styles and colors to apply. Can be 'BOLD', 'ITALIC', 'UNDERLINE', 'INVERSE',
+                         or any of the predefined color names in the FOREGROUND and BACKGROUND dictionaries.
+
+        Returns:
+            str: ANSI escape sequences.
+        """
+        escape_sequence = ''
+
+        style_count = sum(1 for arg in args if arg.upper() in Colors.STYLE)
+        fg_color_count = sum(1 for arg in args if arg.upper() in Colors.FOREGROUND)
+        bg_color_count = sum(1 for arg in args if arg.upper() in Colors.BACKGROUND)
+
+        if style_count > 1:
+            raise ValueError("Only one style can be specified.")
+        if fg_color_count > 1:
+            raise ValueError("Only one foreground color can be specified.")
+        if bg_color_count > 1:
+            raise ValueError("Only one background color can be specified.")
+
+        for style in args:
+            if style.upper() in Colors.STYLE:
+                escape_sequence += Colors.STYLE[style.upper()]
+
+        for fg_color in args:
+            if fg_color.upper() in Colors.FOREGROUND:
+                escape_sequence += Colors.FOREGROUND[fg_color.upper()]
+
+        for bg_color in args:
+            if bg_color.upper() in Colors.BACKGROUND:
+                escape_sequence += Colors.BACKGROUND[bg_color.upper()]
+
+        return escape_sequence
+    
+class CustomLogger:
+    """
+    Logs messages to the console and log files with colored output based on log levels.
+    """
+    LOG_LEVEL_COLORS = {
+        'DEBUG': Colors.color('MAGENTA'),
+        'MISC': Colors.color('BLUE'),
+        'INFO': Colors.color('GREEN'),
+        'PATH': Colors.color("ORANGE"),
+        'WARNING': Colors.color('YELLOW'),
+        'ERROR': Colors.color('RED'),
+        'CRITICAL': Colors.color('RED', 'UNDERLINE')
+    } 
+
+    def log(self, message: str, level: str, site: str, exception = None):
+        """
+        Logs a message to the console and to log files.
+
+        Args:
+            message (str): The message to be logged.
+            level (str): The log level, which determines the color of the log message.
+            site (str): The name of the site being logged.
+            exception (Optional): The exception to be logged, if any.
+
+        Returns:
+            None
+        """
+        folder_name = Utils.get_current_date()
+
+        console_output = f"{message}"
+        color = self.LOG_LEVEL_COLORS.get(level, '')
+        print(f"{color}{console_output}{Colors.RESET}")
+
+        log_entry = f"{Utils.get_current_time()} [{level}]"
+        if site:
+            log_entry += f" [{site}]"
+        log_entry += f" {message}"
+
+        if exception:
+            log_entry += "\n" + str(exception)
+        folder_path = os.path.join(Paths().log_dir, folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+
+        if level in ['INFO', 'PATH', 'MISC']:
+            level = 'INFO'
+        log_file = os.path.join(folder_path, f"{level.lower()}.log")
+
+        with open(log_file, 'a') as f:
+            f.write(log_entry + '\n')
+
+        main_log_file = os.path.join(folder_path, "main.log")
+        with open(main_log_file, 'a') as f:
+            f.write(log_entry + '\n')
