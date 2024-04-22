@@ -668,14 +668,12 @@ class VideoScraper(SiteScraper):
             if location == "inside":
                 if isinstance(attributes, dict) and attributes:
                     for attribute, video_xpaths in attributes.items():
-                        if attribute == "-":
+                        if not video_xpaths:
                             return None, None
                         for xpath in video_xpaths:
                             if xpath == [""]:
                                 self.logger.log(
                                     "No defined video xpaths", level='CRITICAL', site=self.site_name)
-                                return None, None
-                            if not xpath:
                                 return None, None
 
                             if method == "method_selenium":
