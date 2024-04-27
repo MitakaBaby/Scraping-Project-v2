@@ -1,20 +1,31 @@
 import time
 
-from termcolor import cprint
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, WebDriverException, ElementNotInteractableException
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
 
-from common import Utils
+from common import Utils, CustomLogger
 
 
 class InteractWithButtons:
+    """
+    Interacts with various buttons on a webpage.
+    """
 
     def __init__(self, driver, site_name):
+        """
+        Initializes the InteractWithButtons object.
+
+        Args:
+            driver: Selenium WebDriver instance.
+            site_name (str): Name of the site being interacted with.
+        """
         self.driver = driver
-        self.xpaths = Utils.load_configs(site_name)
+        self.site_name = site_name
+        self.logger = CustomLogger()
+        self.xpaths = Utils.load_configs(self.site_name)
 
     def enter_button(self):
         """
@@ -22,26 +33,32 @@ class InteractWithButtons:
         """
         enter_btt_xpaths = self.xpaths.get("enter_button", [])
         if enter_btt_xpaths == [""]:
-            cprint("No defined enter_button xpath", "red")
+            self.logger.log("No defined enter button xpaths",
+                            level='ERROR', 
+                            site=self.site_name)
             return None
         if not enter_btt_xpaths:
             return None
 
         for xpath in enter_btt_xpaths:
             try:
-                enter = WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.XPATH, xpath)))
-                self.driver.execute_script(
-                    "arguments[0].scrollIntoView();", enter)
+                enter = WebDriverWait(self.driver, 15).until(EC.presence_of_element_located((By.XPATH, xpath)))
+                self.driver.execute_script("arguments[0].scrollIntoView();", enter)
                 time.sleep(0.5)
                 self.driver.execute_script("arguments[0].click();", enter)
-                cprint("Entered the site.", "green")
+                self.logger.log("Entered the site", level='INFO', site=self.site_name)
                 break
-            except NoSuchElementException:
-                cprint("No enter button.", "red")
+            except NoSuchElementException as nse_error:
+                self.logger.log("No enter button",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=nse_error)
                 continue
-            except TimeoutException:
-                cprint("Enter button timed out.", "red")
+            except TimeoutException as timeout_error:
+                self.logger.log("Enter button timed out",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=timeout_error)
                 continue
         return None
 
@@ -51,26 +68,32 @@ class InteractWithButtons:
         """
         enter_btt_xpaths = self.xpaths.get("second_enter_button", [])
         if enter_btt_xpaths == [""]:
-            cprint("No defined second_enter_button xpath", "red")
+            self.logger.log("No defined second enter button xpaths",
+                            level='ERROR', 
+                            site=self.site_name)
             return None
         if not enter_btt_xpaths:
             return None
 
         for xpath in enter_btt_xpaths:
             try:
-                enter = WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.XPATH, xpath)))
-                self.driver.execute_script(
-                    "arguments[0].scrollIntoView();", enter)
+                enter = WebDriverWait(self.driver, 15).until(EC.presence_of_element_located((By.XPATH, xpath)))
+                self.driver.execute_script("arguments[0].scrollIntoView();", enter)
                 time.sleep(0.5)
                 self.driver.execute_script("arguments[0].click();", enter)
-                cprint("Entered the site.", "green")
+                self.logger.log("Entered the site", level='INFO', site=self.site_name)
                 break
-            except NoSuchElementException:
-                cprint("No enter button.", "red")
+            except NoSuchElementException as nse_error:
+                self.logger.log("No enter button",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=nse_error)
                 continue
-            except TimeoutException:
-                cprint("Enter button timed out.", "red")
+            except TimeoutException as timeout_error:
+                self.logger.log("Enter button timed out",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=timeout_error)
                 continue
         return None
 
@@ -80,33 +103,42 @@ class InteractWithButtons:
         """
         video_btt_xpaths = self.xpaths.get("video_button", [])
         if video_btt_xpaths == [""]:
-            cprint("No defined video_button xpath", "red")
+            self.logger.log("No defined video button xpaths",
+                            level='ERROR', 
+                            site=self.site_name)
             return None
         if not video_btt_xpaths:
             return None
 
         for xpath in video_btt_xpaths:
             try:
-                video = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, xpath)))
+                video = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.XPATH, xpath)))
                 try:
                     video.click()
                 except WebDriverException:
-                    self.driver.execute_script(
-                        "arguments[0].scrollIntoView();", video)
+                    self.driver.execute_script("arguments[0].scrollIntoView();", video)
                     time.sleep(0.5)
                     self.driver.execute_script("arguments[0].click();", video)
                     time.sleep(3)
-                cprint("Video clicked.", "green")
+                self.logger.log("Video clicked", level='INFO', site=self.site_name)
                 break
-            except NoSuchElementException:
-                cprint("No video button.", "red")
+            except NoSuchElementException as nse_error:
+                self.logger.log("No video button",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=nse_error)
                 continue
-            except TimeoutException:
-                cprint("Video button timed out.", "red")
+            except TimeoutException as timeout_error:
+                self.logger.log("Video button timed out",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=timeout_error)
                 continue
-            except ElementNotInteractableException:
-                cprint("Video button is not interactable.", "red")
+            except ElementNotInteractableException as eni_error:
+                self.logger.log("Video button is not interactable",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=eni_error)
                 continue
         return None
 
@@ -116,27 +148,33 @@ class InteractWithButtons:
         """
         expand_btt_xpaths = self.xpaths.get("expand_desc_button", [])
         if expand_btt_xpaths == [""]:
-            cprint("No defined expand_desc_button xpath", "red")
+            self.logger.log("No defined expand description button xpaths",
+                            level='ERROR', 
+                            site=self.site_name)
             return None
         if not expand_btt_xpaths:
             return None
 
         for xpath in expand_btt_xpaths:
             try:
-                expand = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, xpath)))
-                self.driver.execute_script(
-                    "arguments[0].scrollIntoView();", expand)
+                expand = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.XPATH, xpath)))
+                self.driver.execute_script("arguments[0].scrollIntoView();", expand)
                 time.sleep(0.5)
                 self.driver.execute_script("arguments[0].click();", expand)
                 time.sleep(1)
-                cprint("Expanded description.", "green")
+                self.logger.log("Expanded description", level='INFO', site=self.site_name)
                 break
-            except NoSuchElementException:
-                cprint("No expand description button.", "red")
+            except NoSuchElementException as nse_error:
+                self.logger.log("No expand description button",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=nse_error)
                 continue
-            except TimeoutException:
-                cprint("Expand description button timed out.", "red")
+            except TimeoutException as timeout_error:
+                self.logger.log("Expand description button timed out",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=timeout_error)
                 continue
         return None
 
@@ -146,28 +184,33 @@ class InteractWithButtons:
         """
         expand_btt_xpaths = self.xpaths.get("expand_tags_button", [])
         if expand_btt_xpaths == [""]:
-            cprint("No defined expand_tags_button xpath", "red")
+            self.logger.log("No defined eexpand tags button xpaths",
+                            level='ERROR', 
+                            site=self.site_name)
             return None
         if not expand_btt_xpaths:
             return None
 
         for xpath in expand_btt_xpaths:
             try:
-                expand_tags = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, xpath)))
-                self.driver.execute_script(
-                    "arguments[0].scrollIntoView();", expand_tags)
+                expand_tags = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.XPATH, xpath)))
+                self.driver.execute_script("arguments[0].scrollIntoView();", expand_tags)
                 time.sleep(0.5)
-                self.driver.execute_script(
-                    "arguments[0].click();", expand_tags)
+                self.driver.execute_script("arguments[0].click();", expand_tags)
                 time.sleep(1)
-                cprint("Expanded tags.", "green")
+                self.logger.log("Expanded tags", level='INFO', site=self.site_name)
                 break
-            except NoSuchElementException:
-                cprint("No expand tags button.", "red")
+            except NoSuchElementException as nse_error:
+                self.logger.log("No expand tags button",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=nse_error)
                 continue
-            except TimeoutException:
-                cprint("Expand tags button timed out.", "red")
+            except TimeoutException as timeout_error:
+                self.logger.log("Expand tags button timed out",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=timeout_error)
                 continue
         return None
 
@@ -177,24 +220,26 @@ class InteractWithButtons:
         """
         ad_btt_xpaths = self.xpaths.get("ad_button", [])
         if ad_btt_xpaths == [""]:
-            cprint("No defined ad_button xpath", "red")
+            self.logger.log("No defined ad button xpaths",
+                            level='ERROR', 
+                            site=self.site_name)
             return None
         if not ad_btt_xpaths:
             return None
         while True:
             for xpath in ad_btt_xpaths:
                 try:
-                    click_ad = WebDriverWait(self.driver, 1).until(
-                        EC.presence_of_element_located((By.XPATH, xpath)))
-                    self.driver.execute_script(
-                        "arguments[0].scrollIntoView();", click_ad)
+                    click_ad = WebDriverWait(self.driver, 1).until(EC.presence_of_element_located((By.XPATH, xpath)))
+                    self.driver.execute_script("arguments[0].scrollIntoView();", click_ad)
                     time.sleep(0.5)
-                    self.driver.execute_script(
-                        "arguments[0].click();", click_ad)
-                    cprint("Ad button clicked.", "green")
+                    self.driver.execute_script("arguments[0].click();", click_ad)
+                    self.logger.log("Ad button clicked", level='INFO', site=self.site_name)
                     continue
-                except NoSuchElementException:
-                    cprint("No ad button.", "red")
+                except NoSuchElementException as nse_error:
+                    self.logger.log("No ad button",
+                                level='ERROR',
+                                site=self.site_name,
+                                exception=nse_error)
                     continue
-                except TimeoutException:
+                except TimeoutException as timeout_error:
                     continue
