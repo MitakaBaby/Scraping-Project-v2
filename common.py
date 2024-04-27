@@ -4,6 +4,7 @@ import json
 import time
 
 
+from anyio import Path
 import pandas as pd
 import tkinter as tk
 from tkinter import messagebox
@@ -14,26 +15,159 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 
+class Colors:
+    """
+    Provides ANSI escape sequences for text color, background color, and text style.
+    """
+    # Foreground colors
+    FOREGROUND = {
+        'BLACK': '\033[30m',
+        'RED': '\033[31m',
+        'GREEN': '\033[32m',
+        'YELLOW': '\033[33m',
+        'BLUE': '\033[34m',
+        'MAGENTA': '\033[35m',
+        'CYAN': '\033[36m',
+        'WHITE': '\033[37m',
+        'ORANGE': '\033[38;5;208m'
+    }
+
+    # Background colors
+    BACKGROUND = {
+        'BLACK_BACKGROUND': '\033[40m',
+        'RED_BACKGROUND': '\033[41m',
+        'GREEN_BACKGROUND': '\033[42m',
+        'YELLOW_BACKGROUND': '\033[43m',
+        'BLUE_BACKGROUND': '\033[44m',
+        'MAGENTA_BACKGROUND': '\033[45m',
+        'CYAN_BACKGROUND': '\033[46m',
+        'WHITE_BACKGROUND': '\033[47m'
+    }
+
+    # Styles
+    STYLE = {
+        'BOLD': '\033[1m',
+        'ITALIC': '\033[3m',
+        'UNDERLINE': '\033[4m',
+        'INVERSE': '\033[7m'
+    }
+
+    RESET = '\033[0m'
+
+    @staticmethod
+    def color(*args):
+        """
+        Returns ANSI escape sequences for applying styles and colors in the console.
+
+        Args:
+            *args (str): Styles and colors to apply. Can be 'BOLD', 'ITALIC', 'UNDERLINE', 'INVERSE',
+                         or any of the predefined color names in the FOREGROUND and BACKGROUND dictionaries.
+
+        Returns:
+            str: ANSI escape sequences.
+        """
+        escape_sequence = ''
+
+        style_count = sum(1 for arg in args if arg.upper() in Colors.STYLE)
+        fg_color_count = sum(
+            1 for arg in args if arg.upper() in Colors.FOREGROUND)
+        bg_color_count = sum(
+            1 for arg in args if arg.upper() in Colors.BACKGROUND)
+
+        if style_count > 1:
+            raise ValueError("Only one style can be specified.")
+        if fg_color_count > 1:
+            raise ValueError("Only one foreground color can be specified.")
+        if bg_color_count > 1:
+            raise ValueError("Only one background color can be specified.")
+
+        for style in args:
+            if style.upper() in Colors.STYLE:
+                escape_sequence += Colors.STYLE[style.upper()]
+
+        for fg_color in args:
+            if fg_color.upper() in Colors.FOREGROUND:
+                escape_sequence += Colors.FOREGROUND[fg_color.upper()]
+
+        for bg_color in args:
+            if bg_color.upper() in Colors.BACKGROUND:
+                escape_sequence += Colors.BACKGROUND[bg_color.upper()]
+
+        return escape_sequence
+
+
+class CustomLogger:
+    """
+    Logs messages to the console and log files with colored output based on log levels.
+    """
+    LOG_LEVEL_COLORS = {
+        'DEBUG': Colors.color('MAGENTA'),
+        'MISC': Colors.color('BLUE'),
+        'INFO': Colors.color('GREEN'),
+        'PATH': Colors.color("ORANGE"),
+        'WARNING': Colors.color('YELLOW'),
+        'ERROR': Colors.color('RED'),
+        'CRITICAL': Colors.color('RED', 'UNDERLINE')
+    }
+
+    def log(self, message: str, level: str, site: str, exception=None):
+        """
+        Logs a message to the console and to log files.
+
+        Args:
+            message (str): The message to be logged.
+            level (str): The log level, which determines the color of the log message.
+            site (str): The name of the site being logged.
+            exception (Optional): The exception to be logged, if any.
+
+        Returns:
+            None
+        """
+        folder_name = Utils.get_current_date()
+
+        console_output = f"{message}"
+        color = self.LOG_LEVEL_COLORS.get(level, '')
+        print(f"{color}{console_output}{Colors.RESET}")
+
+        log_entry = f"{Utils.get_current_time()} [{level}]"
+        if site:
+            log_entry += f" [{site}]"
+        log_entry += f" {message}"
+
+        if exception:
+            log_entry += "\n" + str(exception)
+        folder_path = os.path.join(Paths().log_dir, folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+
+        if level in ['INFO', 'PATH', 'MISC']:
+            level = 'INFO'
+        log_file = os.path.join(folder_path, f"{level.lower()}.log")
+
+        with open(log_file, 'a') as f:
+            f.write(log_entry + '\n')
+
+        main_log_file = os.path.join(folder_path, "main.log")
+        with open(main_log_file, 'a') as f:
+            f.write(log_entry + '\n')
+
 
 class Paths:
     """
     Manages file paths and directory creation.
     """
+
     def __init__(self):
         """
         Initializes Paths object.
         """
         self.home_dir = os.path.expanduser("~")
         self.filename = os.path.basename(__file__)  # This is the file name
+        self.script_dir = os.path.dirname(__file__)
         self.data_dir = os.path.join(self.home_dir, "Desktop", "Site", "Data")
-        self.desktop_dir = os.path.join(
-            self.home_dir, self.data_dir, "Data From Scrapers")
-        self.image_dir = os.path.join(
-            self.home_dir, self.data_dir, "Pictures", "Auto Downloaded")
-        self.video_dir = os.path.join(
-            self.home_dir, self.data_dir, "Videos", "Auto Downloaded Trailers")
-        self.raw_data_dir = os.path.join(
-            self.home_dir, self.data_dir, "Raw Data")
+        self.desktop_dir = os.path.join(self.home_dir, self.data_dir, "Data From Scrapers")
+        self.image_dir = os.path.join(self.home_dir, self.data_dir, "Pictures", "Auto Downloaded")
+        self.video_dir = os.path.join(self.home_dir, self.data_dir, "Videos", "Auto Downloaded Trailers")
+        self.raw_data_dir = os.path.join(self.home_dir, self.data_dir, "Raw Data")
         self.log_dir = os.path.join(self.home_dir, self.data_dir, "Logs")
         self.daily_scrapped = ""
         self.site_scrapped = ""
@@ -147,6 +281,7 @@ class DataFrames(Paths):
     Manages the creation and manipulation of Pandas DataFrames for storing scraped data.
     Inherits from Paths to utilize file paths and directory management functionalities.
     """
+
     def save_dataframe_with_retry(self, data, output_path, site_name=None):
         """ 
         Save DataFrame to Excel file with retry mechanism in case of permission errors.
@@ -191,9 +326,10 @@ class DataFrames(Paths):
                     f"Exceeded the maximum number of retry attempts. The file {output_path} may be opened",
                     level='ERROR',
                     site="DataFrame"
-                    )
-                
-                success = self.manual_retry_prompt(output_path, max_retries=3, data=data)
+                )
+
+                success = self.manual_retry_prompt(
+                    output_path, max_retries=3, data=data)
                 if success:
                     self.logger.log(
                         "Manual attempt successful",
@@ -208,12 +344,13 @@ class DataFrames(Paths):
                     )
 
         return df
-    
+
     def manual_retry_prompt(self, output_path, max_retries, data):
         """ Display retry prompt """
         retry_count = 0
         while retry_count < max_retries:
-            retry = messagebox.askretrycancel("Retry", f"Exceeded the maximum number of retry attempts to save file {output_path}. Retry? ({retry_count + 1}/{max_retries})")
+            retry = messagebox.askretrycancel(
+                "Retry", f"Exceeded the maximum number of retry attempts to save file {output_path}. Retry? ({retry_count + 1}/{max_retries})")
             if retry:
                 retry_count += 1
                 try:
@@ -300,20 +437,17 @@ class Utils:
         driver.
         """
         chrome_options = webdriver.ChromeOptions()
-        chrome_options.add_experimental_option(
-            "excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option(
-            'excludeSwitches', ['enable-logging'])
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-logging"])
         chrome_options.add_argument("--start-maximized")
-        chrome_options.add_argument(
-            "--disable-blink-features=AutomationControlled")
-        chrome_options.add_argument('--log-level=3')
-        chrome_options.add_argument('--mute-audio')
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--log-level=3")
+        chrome_options.add_argument("--mute-audio")
 
-        chrome_options.add_argument('--disable-logging')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-remote-debugging')
-        chrome_options.add_argument('--disable-infobars')
+        chrome_options.add_argument("--disable-logging")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-remote-debugging")
+        chrome_options.add_argument("--disable-infobars")
 
         if headless:
             chrome_options.add_argument("--headless")
@@ -366,6 +500,43 @@ class Utils:
         return time.time()
 
     @staticmethod
+    def log_start_time(site):
+        """
+        Logs the start time of an execution.
+
+        Args:
+            site (str): The name of the site or process being logged.
+
+        Returns:
+            float: The start time in seconds since the epoch.
+        """
+        start_time = Utils.start_time()
+        CustomLogger().log(
+            f"{site} started executing at {Utils.get_current_time()}",
+            level='MISC',
+            site=site)
+        return start_time
+
+    @staticmethod
+    def log_elapsed_time(start_time, site):
+        """
+        Logs the elapsed time since the start time.
+
+        Args:
+            start_time (float): The start time in seconds since the epoch.
+            site (str): The name of the site or process being logged.
+
+        Returns:
+            None
+        """
+        end_time = Utils.end_time()
+        elapsed_time = end_time - start_time
+        CustomLogger().log(
+            f"Elapsed time: {elapsed_time:.2f} seconds\n{'_' * 100}",
+            level='MISC',
+            site=site)
+
+    @staticmethod
     def load_configs(site):
         """
         Load xpaths from a JSON file.
@@ -376,12 +547,10 @@ class Utils:
         Returns:
             dict: A dictionary of xpaths for the given site.
         """
-        with open('D:\\Visual Studio Code\\Scrapers\\Progam\\V2\\sites_config.json',
-                  'r', encoding='utf-8') as json_file:
+        with open(os.path.join(Paths().script_dir, 'sites_config.json'), 'r', encoding='utf-8') as json_file:
             xpaths = json.load(json_file)
 
-            xpaths_lower = {key.lower(): value for key,
-                            value in xpaths.items()}
+            xpaths_lower = {key.lower(): value for key, value in xpaths.items()}
 
             return xpaths_lower.get(site.lower(), {})
 
@@ -397,140 +566,58 @@ class Utils:
             str: The extracted site name.
         """
         parsed_url = urlparse(url)
-        match = re.match(
-            r"^(?:https?://)?(?:www\.)?(?:.*?\.)?(?P<site_name>.+?)\.", parsed_url.netloc)
+        match = re.match(r"^(?:https?://)?(?:www\.)?(?:.*?\.)?(?P<site_name>.+?)\.", parsed_url.netloc)
         site_name = match.group("site_name").replace("-", "").replace("tour.", "").title() if match else ""
         return site_name
 
-
-class Colors:
-    """
-    Provides ANSI escape sequences for text color, background color, and text style.
-    """
-    # Foreground colors
-    FOREGROUND = {
-        'BLACK': '\033[30m',
-        'RED': '\033[31m',
-        'GREEN': '\033[32m',
-        'YELLOW': '\033[33m',
-        'BLUE': '\033[34m',
-        'MAGENTA': '\033[35m',
-        'CYAN': '\033[36m',
-        'WHITE': '\033[37m',
-        'ORANGE': '\033[38;5;208m'
-    }
-
-    # Background colors
-    BACKGROUND = {
-        'BLACK_BACKGROUND': '\033[40m',
-        'RED_BACKGROUND': '\033[41m',
-        'GREEN_BACKGROUND': '\033[42m',
-        'YELLOW_BACKGROUND': '\033[43m',
-        'BLUE_BACKGROUND': '\033[44m',
-        'MAGENTA_BACKGROUND': '\033[45m',
-        'CYAN_BACKGROUND': '\033[46m',
-        'WHITE_BACKGROUND': '\033[47m'
-    }
-
-    # Styles
-    STYLE = {
-        'BOLD': '\033[1m',
-        'ITALIC': '\033[3m',
-        'UNDERLINE': '\033[4m',
-        'INVERSE': '\033[7m'
-    }
-
-    RESET = '\033[0m'
-
     @staticmethod
-    def color(*args):
+    def load_site_config(site):
         """
-        Returns ANSI escape sequences for applying styles and colors in the console.
+        Load the site configuration and return the site URL and name.
 
         Args:
-            *args (str): Styles and colors to apply. Can be 'BOLD', 'ITALIC', 'UNDERLINE', 'INVERSE',
-                         or any of the predefined color names in the FOREGROUND and BACKGROUND dictionaries.
+            site (str): The name of the site.
 
         Returns:
-            str: ANSI escape sequences.
+            tuple: A tuple containing the site URL and name.
         """
-        escape_sequence = ''
+        url_site = Utils.load_configs(site).get("site")
+        site_name = Utils.extract_site_name(url_site)
+        return url_site, site_name
 
-        style_count = sum(1 for arg in args if arg.upper() in Colors.STYLE)
-        fg_color_count = sum(1 for arg in args if arg.upper() in Colors.FOREGROUND)
-        bg_color_count = sum(1 for arg in args if arg.upper() in Colors.BACKGROUND)
-
-        if style_count > 1:
-            raise ValueError("Only one style can be specified.")
-        if fg_color_count > 1:
-            raise ValueError("Only one foreground color can be specified.")
-        if bg_color_count > 1:
-            raise ValueError("Only one background color can be specified.")
-
-        for style in args:
-            if style.upper() in Colors.STYLE:
-                escape_sequence += Colors.STYLE[style.upper()]
-
-        for fg_color in args:
-            if fg_color.upper() in Colors.FOREGROUND:
-                escape_sequence += Colors.FOREGROUND[fg_color.upper()]
-
-        for bg_color in args:
-            if bg_color.upper() in Colors.BACKGROUND:
-                escape_sequence += Colors.BACKGROUND[bg_color.upper()]
-
-        return escape_sequence
-    
-class CustomLogger:
-    """
-    Logs messages to the console and log files with colored output based on log levels.
-    """
-    LOG_LEVEL_COLORS = {
-        'DEBUG': Colors.color('MAGENTA'),
-        'MISC': Colors.color('BLUE'),
-        'INFO': Colors.color('GREEN'),
-        'PATH': Colors.color("ORANGE"),
-        'WARNING': Colors.color('YELLOW'),
-        'ERROR': Colors.color('RED'),
-        'CRITICAL': Colors.color('RED', 'UNDERLINE')
-    } 
-
-    def log(self, message: str, level: str, site: str, exception = None):
+    @staticmethod
+    def get_existing_data(site_name):
         """
-        Logs a message to the console and to log files.
+        Retrieves existing data (links and titles) from a saved DataFrame for a given site.
 
         Args:
-            message (str): The message to be logged.
-            level (str): The log level, which determines the color of the log message.
-            site (str): The name of the site being logged.
-            exception (Optional): The exception to be logged, if any.
+            site_name (str): The name of the site.
+
+        Returns:
+            tuple: A tuple containing lists of existing links and titles.
+                - If no data is found, returns empty lists.
+        """
+        data = []
+        result = DataFrames().save_dataframe_with_retry(
+            data, "site", site_name)
+        if result is None:
+            return [], []
+        else:
+            link_from_excel = result['Link for video'].tolist()
+            title_from_excel = result['Title'].tolist()
+            return link_from_excel, title_from_excel
+
+    @staticmethod
+    def save_scraped_data(data, site_name):
+        """
+        Saves scraped data to Excel files.
+
+        Args:
+            data (list or DataFrame): Data to be saved.
+            site_name (str): Name of the site for which the data is being saved.
 
         Returns:
             None
         """
-        folder_name = Utils.get_current_date()
-
-        console_output = f"{message}"
-        color = self.LOG_LEVEL_COLORS.get(level, '')
-        print(f"{color}{console_output}{Colors.RESET}")
-
-        log_entry = f"{Utils.get_current_time()} [{level}]"
-        if site:
-            log_entry += f" [{site}]"
-        log_entry += f" {message}"
-
-        if exception:
-            log_entry += "\n" + str(exception)
-        folder_path = os.path.join(Paths().log_dir, folder_name)
-        os.makedirs(folder_path, exist_ok=True)
-
-        if level in ['INFO', 'PATH', 'MISC']:
-            level = 'INFO'
-        log_file = os.path.join(folder_path, f"{level.lower()}.log")
-
-        with open(log_file, 'a') as f:
-            f.write(log_entry + '\n')
-
-        main_log_file = os.path.join(folder_path, "main.log")
-        with open(main_log_file, 'a') as f:
-            f.write(log_entry + '\n')
+        DataFrames().save_dataframe_with_retry(data, "daily")
+        DataFrames().save_dataframe_with_retry(data, "site", site_name)
