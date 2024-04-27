@@ -1,15 +1,13 @@
 import os
 import re
-from urllib import response
-import requests
 import time
 from datetime import datetime
 
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
 from dateutil.parser import parse, ParserError
-from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, WebDriverException
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, WebDriverException
 
 
 from common import Paths, Utils, CustomLogger
@@ -354,8 +352,7 @@ class SiteScraper:
                     num_tags_elements = len(tags_elements)
                     if not tags_elements:
                         raise NoSuchElementException
-                    tags_names = [tag.get_attribute("textContent").title().replace(
-                        ",", "").replace('\n', '').strip() for tag in tags_elements]
+                    tags_names = [tag.get_attribute("textContent").title().replace(",", "").replace('\n', '').strip() for tag in tags_elements]
                     self.tags = ', '.join(tags_names)
                     break
                 except NoSuchElementException:
@@ -364,8 +361,7 @@ class SiteScraper:
                 tags_elements = tree.xpath(xpath)
                 num_tags_elements = len(tags_elements)
                 if tags_elements:
-                    tags_names = [tag.text_content().title().replace(
-                        ",", "").replace('\n', '').strip() for tag in tags_elements]
+                    tags_names = [tag.text_content().title().replace(",", "").replace('\n', '').strip() for tag in tags_elements]
                     self.tags = ', '.join(tags_names)
 
         if not self.tags:
@@ -388,8 +384,7 @@ class SiteScraper:
         """
         transformations = [
             lambda text: text.title().replace(',', '').strip(),
-            lambda text: text.title().replace(',', '').strip().strip("Starring: ") if text.startswith(
-                "Starring: ") else text.title().replace(',', '').strip(),
+            lambda text: text.title().replace(',', '').strip().strip("Starring: ") if text.startswith("Starring: ") else text.title().replace(',', '').strip(),
         ]
 
         if inner_tree is not None:
@@ -406,15 +401,16 @@ class SiteScraper:
                 if location == "inside":
                     for xpath in models_xpaths:
                         if xpath == [""]:
-                            self.logger.log("No defined models xpaths", level='ERROR', site=self.site_name)
+                            self.logger.log("No defined models xpaths",
+                                            level='ERROR', 
+                                            site=self.site_name)
                             return None
                         if not xpath:
                             return None
                         models_names = []
                         if method == "method_selenium":
                             try:
-                                models_elements = self.driver.find_elements(
-                                    By.XPATH, xpath)
+                                models_elements = self.driver.find_elements(By.XPATH, xpath)
                                 if not models_elements:
                                     raise NoSuchElementException
                             except NoSuchElementException:
@@ -510,75 +506,73 @@ class ImageScraper(SiteScraper):
             tree = inner_tree
         xpaths_key = self.config.get(f"image_info", {})
         method = self.config.get("scrape_method")
-        replace_img_config = self.config.get("replace_img_link", {})
-        replacements = replace_img_config.get("replacements", [])
+        replacements = self.config.get("replace_img_link", {}).get("replacements", [])
         img_inside = None
         image_found = False
         for location, attributes in xpaths_key.items():
             if location == "inside":
                 if isinstance(attributes, dict) and attributes:
                     for attribute, image_xpaths in attributes.items():
+                        if not image_xpaths and not image_home:
+                            return None, None
+
                         for xpath in image_xpaths:
                             if xpath == [""]:
                                 self.logger.log(
                                     "No defined image xpaths", level='ERROR', site=self.site_name)
                                 return None, None
-            
-                            if not xpath:
-                                return None, None
-                            
-                            for xpath in image_xpaths:
 
-                                if method == "method_selenium":
-                                    try:
-                                        link_to_source = self.driver.find_element(By.XPATH, xpath)
-                                    except NoSuchElementException:
-                                        continue
-                                    except StaleElementReferenceException:
-                                        time.sleep(3)
-                                        self.logger.log(
-                                            "Stale element. Re-finding elements.", 
-                                            level='WARNING', 
-                                            site=self.site_name)
-                                        link_to_source = self.driver.find_element(By.XPATH, xpath)
-                                    try:
-                                        img_inside = self.image_link_replacements(
-                                            link_to_source.get_attribute(attribute), replacements)
-                                    except StaleElementReferenceException:
-                                        time.sleep(3)
-                                        self.logger.log(
-                                            "Stale element. Re-finding elements.", level='WARNING', site=self.site_name)
-                                        link_to_source = self.driver.find_element(
-                                            By.XPATH, xpath)
-                                        img_inside = self.image_link_replacements(
-                                            link_to_source.get_attribute(attribute), replacements)
+                            if method == "method_selenium":
+                                try:
+                                    link_to_source = self.driver.find_element(By.XPATH, xpath)
+                                except NoSuchElementException:
+                                    continue
+                                except StaleElementReferenceException:
+                                    time.sleep(3)
+                                    self.logger.log(
+                                        "Stale element. Re-finding elements.", 
+                                        level='WARNING', 
+                                        site=self.site_name)
+                                    link_to_source = self.driver.find_element(By.XPATH, xpath)
+                                try:
+                                    img_inside = self.image_link_replacements(
+                                        link_to_source.get_attribute(attribute), replacements)
+                                except StaleElementReferenceException:
+                                    time.sleep(3)
+                                    self.logger.log(
+                                        "Stale element. Re-finding elements.",
+                                        level='WARNING',
+                                        site=self.site_name)
+                                    link_to_source = self.driver.find_element(By.XPATH, xpath)
+                                    img_inside = self.image_link_replacements(
+                                        link_to_source.get_attribute(attribute), replacements)
 
-                                elif method =="method_lxml":
-                                    link_to_source = tree.find(xpath)
-                                    img_inside = self.image_link_replacements(link_to_source.get(attribute), replacements)
+                            elif method =="method_lxml":
+                                link_to_source = tree.find(xpath)
+                                img_inside = self.image_link_replacements(link_to_source.get(attribute), replacements)
 
-                                if img_inside:
-                                    if attribute == "style":
-                                        url_pattern = re.compile(r"url\((.+?)\)")
-                                        match = re.search(url_pattern, img_inside)
-                                        if match:
-                                            url = match.group(1)
-                                            img_inside = url.strip('"')
-                                if img_inside is not None and img_inside != "":
-                                    if img_inside:
-                                        image_found = True
-                                        break
+                            if img_inside:
+                                if attribute == "style":
+                                    url_pattern = re.compile(r"url\((.+?)\)")
+                                    match = re.search(url_pattern, img_inside)
+                                    if match:
+                                        url = match.group(1)
+                                        img_inside = url.strip('"')
+                            if img_inside is not None and img_inside != "":
                                 if img_inside:
                                     image_found = True
                                     break
-                                else:
-                                    self.logger.log(
-                                        "img_inside is None", level='ERROR', site=self.site_name)
-                                    continue
-                            if image_found:
+                            if img_inside:
+                                image_found = True
                                 break
+                            else:
+                                self.logger.log(
+                                    "img_inside is None", level='ERROR', site=self.site_name)
+                                continue
                         if image_found:
                             break
+                    if image_found:
+                        break
         if img_inside:
             self.link_for_image = img_inside
             self.link_for_image, path_image = self.save_image()
@@ -617,7 +611,6 @@ class VideoScraper(SiteScraper):
                     replacement_str = replacement["replacement"]
                     if replacement_str not in link:
                         link = link.replace(to_replace, replacement_str)
-                    
         return link
 
     def save_video(self):
@@ -630,10 +623,10 @@ class VideoScraper(SiteScraper):
         path_video = None
         if self.link_for_trailer is not None and self.link_for_trailer.startswith("blob"):
             self.logger.log(f"Video starts with blob",
-                            level='WARNING', site=self.site_name)
+                            level='WARNING', 
+                            site=self.site_name)
         else:
-            path_video = self.paths.create_video_path(
-                self.site_name, self.counter_vid)
+            path_video = self.paths.create_video_path(self.site_name, self.counter_vid)
             response_video, vid_inside = RequestsHandling(self.url_site, self.link_for_trailer).main()
             if response_video:
                 with open(path_video, 'wb') as video_file:
@@ -648,11 +641,11 @@ class VideoScraper(SiteScraper):
 
         return vid_inside, path_video
 
-    def scrape_video(self, vid_home=None, inner_tree = None):
+    def scrape_video(self, vid_home_page=None, inner_tree = None):
         """ Scrape video link from the web page.
 
         Parameters:
-            vid_home (str): Optional link to the video.
+            vid_home_page (str): Optional link to the video.
 
         Returns:
             tuple: Tuple containing the scraped video link and the path to the saved video file.
@@ -662,18 +655,19 @@ class VideoScraper(SiteScraper):
         vid_inside = None
         method = self.config.get("scrape_method")
         xpaths_key = self.config.get(f"video_info", {})
-        replace_vid_config = self.config.get("replace_vid_link", {})
-        replacements = replace_vid_config.get("replacements", [])
+        replacements = self.config.get("replace_vid_link", {}).get("replacements", [])
         for location, attributes in xpaths_key.items():
             if location == "inside":
                 if isinstance(attributes, dict) and attributes:
                     for attribute, video_xpaths in attributes.items():
-                        if not video_xpaths:
+                        if not video_xpaths and not vid_home_page:
                             return None, None
                         for xpath in video_xpaths:
                             if xpath == [""]:
                                 self.logger.log(
-                                    "No defined video xpaths", level='CRITICAL', site=self.site_name)
+                                    "No defined video xpaths", 
+                                    level='CRITICAL', 
+                                    site=self.site_name)
                                 return None, None
 
                             if method == "method_selenium":
@@ -707,9 +701,10 @@ class VideoScraper(SiteScraper):
                             if vid_inside:
                                 if attribute == "onclick":
                                     patterns = [
-                                        r"tload\(['\"]?(https?://[^'\" ]+?)['\"]?, this\)",
+                                        r"tload\(['\"]?(https?://[^'\" ]+?)['\"]?,\s*this\);?",
                                         r"tload\('(.+?)'\);?",
-                                        r"tload\(['\"]?(https?://.+?)['\"]?, this\)",
+                                        r"tload\(['\"]?(https?://.+?)['\"]?,\s*this\);?",
+                                        r"tload\(['\"]?(\/[^'\" ]+?)['\"]?,\s*this\);?"
                                     ]
                                     for pattern in patterns:
                                         url_pattern = re.compile(pattern)
@@ -718,8 +713,7 @@ class VideoScraper(SiteScraper):
                                             vid_inside = match.group(1)
                                             break
                             if not vid_inside:
-                                self.logger.log(
-                                    "vid_inside is None", level='ERROR', site=self.site_name)
+                                self.logger.log("vid_inside is None", level='ERROR', site=self.site_name)
                                 continue
                             break
 
@@ -728,8 +722,8 @@ class VideoScraper(SiteScraper):
             self.link_for_trailer, path_video = self.save_video()
             self.logger.log("Video found", level='INFO', site=self.site_name)
             return self.link_for_trailer, path_video
-        elif vid_home:
-            self.link_for_trailer = vid_home
+        elif vid_home_page:
+            self.link_for_trailer = vid_home_page
             self.link_for_trailer, path_video = self.save_video()
             self.logger.log("Video found", level='INFO', site=self.site_name)
             return self.link_for_trailer, path_video
